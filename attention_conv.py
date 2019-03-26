@@ -1,12 +1,18 @@
 import torch
 from torch.nn import Parameter
 import torch.nn.functional as F
+from torch.nn.modules import Module
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.utils import add_self_loops
-from torch_scatter import scatter_add
+from torch_scatter import scatter_add, scatter_mul
 from torch.nn import Sequential, ReLU, Linear
 import math
 
+
+alpha_entropy = []
+def append_alpha(module, input, output):
+    del alpha_entropy[:-1]
+    alpha_entropy.append(output.tolist())
 
 def glorot(tensor):
     stdv = math.sqrt(6.0 / (tensor.size(0) + tensor.size(1)))
@@ -18,6 +24,16 @@ def zeros(tensor):
     if tensor is not None:
         tensor.data.fill_(0)
 
+
+class HookEntropyLayer(Module):
+    def __init__(self):
+        super(HookEntropyLayer, self).__init__()
+
+    def forward(self, input, edge_index):
+        log = torch.log(input)
+        input = torch.mul(log, input)
+        entropy = -scatter_add(input, edge_index, dim=0)
+        return entropy
 
 
 class GATConv(MessagePassing):
@@ -38,6 +54,9 @@ class GATConv(MessagePassing):
         self.concat = concat
         self.negative_slope = negative_slope
         self.dropout = dropout
+
+        self.hook = HookEntropyLayer()
+        self.hook.register_forward_hook(append_alpha)
 
         self.weight1 = Parameter(
             torch.Tensor(in_channels, heads * out_channels))
@@ -66,9 +85,9 @@ class GATConv(MessagePassing):
 
     def forward(self, x, edge_index):
         """"""
-        edge_index = add_self_loops(edge_index, num_nodes=x.size(0))
-
+        # edge_index = add_self_loops(edge_index, num_nodes=x.size(0))
         x = torch.mm(x, self.weight1).view(-1, self.heads, self.out_channels)
+
         x = self.propagate('add', edge_index, x=x, num_nodes=x.size(0))
         # x = torch.mm(x, self.weight2)
         return x
@@ -76,9 +95,10 @@ class GATConv(MessagePassing):
     def message(self, x_i, x_j, edge_index, num_nodes):
         # Compute attention coefficients.
         alpha = (torch.cat([x_i, x_j], dim=-1) * self.att).sum(dim=-1)
-        # alpha = F.sigmoid(alpha)
-        alpha = torch.exp(-F.leaky_relu(alpha, self.negative_slope))
-        alpha = alpha / scatter_add(alpha, edge_index[0], dim=0, dim_size=num_nodes)[edge_index[0]]
+        alpha = F.relu(alpha)
+        # alpha = torch.exp(-F.leaky_relu(alpha, self.negative_slope))
+        # alpha = alpha / scatter_add(alpha, edge_index[0], dim=0, dim_size=num_nodes)[edge_index[0]]
+        # self.hook(alpha, edge_index[0])
 
         # Sample attention coefficients stochastically.
         if self.training and self.dropout > 0:
