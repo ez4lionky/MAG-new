@@ -1,6 +1,10 @@
+import numpy as np
+import os
+import os.path as osp
 import matplotlib.pyplot as plt
 
-def plot_loss_and_acc(epoch, train_losses, test_losses, train_accs, test_accs):
+def plot_loss_and_acc(epoch, train_losses, test_losses, train_accs, test_accs, fpath='../Graphs/cv_fig'):
+    plt.figure()
     ax1 = plt.subplot(211)
     l1, = plt.plot(range(epoch), train_losses, 'b', label='train_losses')
     l2, = plt.plot(range(epoch), test_losses, 'r', label='test_losses')
@@ -20,4 +24,22 @@ def plot_loss_and_acc(epoch, train_losses, test_losses, train_accs, test_accs):
     plt.tight_layout(h_pad=3)
     ax2.set_title('D-GAT_SUM Acc - Epoch curve')
     plt.legend(handles=[l3, l4], labels=['Train_accs', 'Test_accs'], loc='best')
-    plt.savefig('../Graphs/fig2')
+    plt.savefig(fpath)
+
+
+def make_cv(path, i, train_index, test_index):
+    # print(path)
+    fpath = path + '/cv'
+    if not osp.exists(fpath):
+        os.makedirs(fpath)
+    fpath = fpath + '/cv_fold_{}'.format(i)
+    # print(fpath)
+    np.savetxt(fpath + '_train_index', train_index.reshape(1, -1), '%d')
+    np.savetxt(fpath + '_test_index', test_index.reshape(1, -1), '%d')
+
+def read_cv(path, i):
+    fpath = path + '/cv/cv_fold_{}'.format(i)
+    train_index = list(np.loadtxt(fpath + '_train_index', dtype='int32'))
+    test_index = list(np.loadtxt(fpath + '_test_index', dtype='int32'))
+
+    return  train_index, test_index

@@ -2,7 +2,7 @@ import time
 import os.path as osp
 import numpy as np
 from sklearn.model_selection import StratifiedKFold
-from util import plot_loss_and_acc
+from util import plot_loss_and_acc, make_cv, read_cv
 
 import torch
 from torch.nn import BatchNorm1d
@@ -20,13 +20,12 @@ from pool_layer import DiffPoolSparse
 
 max_degree = 10000
 
-path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'IMDB-BINARY')
+path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'MUTAG')
 dataset = TUDataset(
     path,
-    name='IMDB-BINARY',
-    transform=T.OneHotDegree(max_degree),
-    # pre_filter=MyFilter()
-).shuffle()
+    name='MUTAG',
+    # transform=T.OneHotDegree(max_degree),
+)
 label = dataset.data.y
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 n_components = dataset.num_classes
@@ -59,6 +58,7 @@ class MyEdgeConvBlock(torch.nn.Module):
         super().__init__()
         self.bn=BatchNorm1d(in_channels)
         self.ecn=EdgeConv(in_channels, out_channels, edge_filters_num,dropout)
+
     def forward(self, x,edge_index):
         x=self.bn(x)
         x=self.ecn(x,edge_index)
@@ -120,9 +120,9 @@ class Net(torch.nn.Module):
 def train(model, optimizer, epoch):
     model.train()
 
-    # if epoch % 50 == 1 :
+    # if epoch % 50 == 0 :
     #    for param_group in optimizer.param_groups:
-    #        param_group['lr'] = 0.8 * param_group['lr']
+    #        param_group['lr'] = 0.5 * param_group['lr']
 
     loss_all = 0
     for data in train_loader:
@@ -163,7 +163,12 @@ if __name__ == '__main__':
     np.set_printoptions(threshold=10000)
     train_losses, test_losses, train_accs, test_accs = [], [], [], []
     skf = StratifiedKFold(n_splits=10)
+    i = 0
     for train_index, test_index in skf.split(range(len(label)), label):
+        # make_cv(path, i, train_index, test_index)
+        train_index, test_index = read_cv(path, i)
+        i += 1
+
         model = Net().to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
         train_index = list(train_index)
@@ -173,7 +178,7 @@ if __name__ == '__main__':
         train_dataset = load_data(dataset, train_index)
         test_loader = DataLoader(test_dataset, batch_size=batch_size)
         train_loader = DataLoader(train_dataset, batch_size=batch_size)
-        for epoch in range(1, 201):
+        for epoch in range(1, 400):
             start = time.time()
             train_loss = train(model, optimizer, epoch)
             train_acc, _ = test(model, train_loader)
@@ -188,15 +193,16 @@ if __name__ == '__main__':
             cv_train_accs.append(train_acc)
             cv_test_accs.append(test_acc)
 
+        plot_loss_and_acc(epoch, cv_train_losses, cv_test_losses, cv_train_accs, cv_test_accs)
         train_losses.append(cv_train_losses)
         test_losses.append(cv_test_losses)
         train_accs.append(cv_train_accs)
         test_accs.append(cv_test_accs)
 
-    train_losses, test_losses = np.array(train_losses), np.array(test_losses)
+
     train_losses = np.mean(train_losses, axis=0)
     test_losses = np.mean(test_losses, axis=0)
     train_accs = np.mean(train_accs, axis=0)
     test_accs = np.mean(test_accs, axis=0)
 
-    plot_loss_and_acc(epoch, train_losses, test_losses, train_accs, test_accs)
+    plot_loss_and_acc(epoch, train_losses, test_losses, train_accs, test_accs, fpath='../Graphs/mean_fig')
