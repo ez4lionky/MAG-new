@@ -20,4 +20,4 @@ def plot_loss_and_acc(epoch, train_losses, test_losses, train_accs, test_accs):
     plt.tight_layout(h_pad=3)
     ax2.set_title('D-GAT_SUM Acc - Epoch curve')
     plt.legend(handles=[l3, l4], labels=['Train_accs', 'Test_accs'], loc='best')
-    plt.savefig('../Graphs/fig1')
+    plt.savefig('../Graphs/fig2')

@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import KFold
 
+from torch.nn import BatchNorm1d
 import torch
 import torch.nn.functional as F
 from torch.nn import Sequential, Linear, ReLU
@@ -22,10 +23,10 @@ class MyFilter(object):
     def __call__(self, data):
         return data.num_nodes <= max_nodes
 
-path = osp.join(osp.dirname(osp.realpath(__file__)), 'data', 'ENZYMES')
+path = osp.join(osp.dirname(osp.realpath(__file__)), 'data', 'NCI1')
 dataset = TUDataset(
     path,
-    name='ENZYMES',
+    name='NCI1',
 )
 
 # transform = T.ToDense(max_nodes),
@@ -36,130 +37,164 @@ data_index = range(len(dataset))
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-# class GINConv(torch.nn.Module):
-#     def __init__(self, nn, eps=0, train_eps=False):
-#         super(GINConv, self).__init__()
-#         self.nn = nn
-#         self.initial_eps = eps
-#         if train_eps:
-#             self.eps = torch.nn.Parameter(torch.Tensor([eps]))
-#         else:
-#             self.register_buffer('eps', torch.Tensor([eps]))
-#         self.reset_parameters()
-#
-#     def reset_parameters(self):
-#         reset(self.nn)
-#         self.eps.data.fill_(self.initial_eps)
-#         """"""
-#
-#     def forward(self, x, edge_index):
-#         x = x.unsqueeze(-1) if x.dim() == 1 else x
-#         # tmp = edge_index
-#         edge_index, _ = remove_self_loops(edge_index)
-#         row, col = edge_index
-#
-#         # edge_weight = torch.ones(
-#         #     (tmp.size(1),), dtype=x.dtype, device=x.device).view(-1)
-#         # loop_weight = torch.full(
-#         #     (x.size(0),),
-#         #     1,
-#         #     dtype=x.dtype,
-#         #     device=x.device)
-#         # edge_weight = torch.cat([edge_weight, loop_weight], dim=0)
-#         # tmp = add_self_loops(tmp)  # add_self_loops函数的作用就是在edge_index二元组的末尾append range(num_nodes)
-#         # tmp_row, tmp_col = tmp
-#         # deg = scatter_add(edge_weight, tmp_row, dim=0, dim_size=x.size(0)).unsqueeze(1)
-#         # deg = deg.repeat(1, x.size()[-1])
-#
-#         out = scatter_add(x[col], row, dim=0, dim_size=x.size(0))
-#         # out = deg.mul(out)
-#         out = (1 + self.eps) * x + out
-#         out = self.nn(out)
-#         return out
-#
-#     def __repr__(self):
-#         return '{}(nn={})'.format(self.__class__.__name__, self.nn)
-#
-#
-# class Net(torch.nn.Module):
-#     def __init__(self):
-#         super(Net, self).__init__()
-#
-#         num_features = dataset.num_features
-#         dim = 32
-#
-#         nn1 = Sequential(Linear(num_features, dim), ReLU(), Linear(dim, dim))
-#         self.conv1 = GINConv(nn1)
-#         self.bn1 = torch.nn.BatchNorm1d(dim)
-#
-#         nn2 = Sequential(Linear(dim, dim), ReLU(), Linear(dim, dim))
-#         self.conv2 = GINConv(nn2)
-#         self.bn2 = torch.nn.BatchNorm1d(dim)
-#
-#         nn3 = Sequential(Linear(dim, dim), ReLU(), Linear(dim, dim))
-#         self.conv3 = GINConv(nn3)
-#         self.bn3 = torch.nn.BatchNorm1d(dim)
-#
-#         nn4 = Sequential(Linear(dim, dim), ReLU(), Linear(dim, dim))
-#         self.conv4 = GINConv(nn4)
-#         self.bn4 = torch.nn.BatchNorm1d(dim)
-#
-#         nn5 = Sequential(Linear(dim, dim), ReLU(), Linear(dim, dim))
-#         self.conv5 = GINConv(nn5)
-#         self.bn5 = torch.nn.BatchNorm1d(dim)
-#
-#         self.fc1 = Linear(dim, dim)
-#         self.fc2 = Linear(dim, dataset.num_classes)
-#
-#     def forward(self, x, edge_index, batch):
-#         x = F.relu(self.conv1(x, edge_index))
-#         x = self.bn1(x)
-#         x = F.relu(self.conv2(x, edge_index))
-#         x = self.bn2(x)
-#         x = F.relu(self.conv3(x, edge_index))
-#         x = self.bn3(x)
-#         x = F.relu(self.conv4(x, edge_index))
-#         x = self.bn4(x)
-#         x = F.relu(self.conv5(x, edge_index))
-#         x = self.bn5(x)
-#         x = global_add_pool(x, batch)
-#         x = F.relu(self.fc1(x))
-#         x = F.dropout(x, p=0.5, training=self.training)
-#         x = self.fc2(x)
-#         return F.log_softmax(x, dim=-1)
+class GINConv(torch.nn.Module):
+    def __init__(self, nn, eps=0, train_eps=False):
+        super(GINConv, self).__init__()
+        self.nn = nn
+        self.initial_eps = eps
+        if train_eps:
+            self.eps = torch.nn.Parameter(torch.Tensor([eps]))
+        else:
+            self.register_buffer('eps', torch.Tensor([eps]))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        reset(self.nn)
+        self.eps.data.fill_(self.initial_eps)
+        """"""
+
+    def forward(self, x, edge_index):
+        x = x.unsqueeze(-1) if x.dim() == 1 else x
+        # tmp = edge_index
+        edge_index, _ = remove_self_loops(edge_index)
+        row, col = edge_index
+
+        # edge_weight = torch.ones(
+        #     (tmp.size(1),), dtype=x.dtype, device=x.device).view(-1)
+        # loop_weight = torch.full(
+        #     (x.size(0),),
+        #     1,
+        #     dtype=x.dtype,
+        #     device=x.device)
+        # edge_weight = torch.cat([edge_weight, loop_weight], dim=0)
+        # tmp = add_self_loops(tmp)  # add_self_loops函数的作用就是在edge_index二元组的末尾append range(num_nodes)
+        # tmp_row, tmp_col = tmp
+        # deg = scatter_add(edge_weight, tmp_row, dim=0, dim_size=x.size(0)).unsqueeze(1)
+        # deg = deg.repeat(1, x.size()[-1])
+
+        out = scatter_add(x[col], row, dim=0, dim_size=x.size(0))
+        # out = deg.mul(out)
+        out = (1 + self.eps) * x + out
+        out = self.nn(out)
+        return out
+
+    def __repr__(self):
+        return '{}(nn={})'.format(self.__class__.__name__, self.nn)
+
 
 class Net(torch.nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.conv1 = GATConv(dataset.num_features, 8, heads=8, dropout=0.6, concat=False)
-        self.conv2 = GATConv(8 * 8, 8, heads=8, dropout=0.6, concat=True)
-        self.conv3 = GATConv(8 * 8, 8, heads=8, dropout=0.6, concat=True)
-        self.conv4 = GATConv(8 * 1, 8, heads=8, dropout=0.6)
 
-        self.fc1 = Linear(8 * 8, 32)
-        self.fc2 = Linear(32, dataset.num_classes)
+        num_features = dataset.num_features
+        dim = 32
+
+        nn1 = Sequential(Linear(num_features, dim), ReLU(), Linear(dim, dim))
+        self.conv1 = GINConv(nn1)
+        self.bn1 = torch.nn.BatchNorm1d(dim)
+
+        nn2 = Sequential(Linear(dim, dim), ReLU(), Linear(dim, dim))
+        self.conv2 = GINConv(nn2)
+        self.bn2 = torch.nn.BatchNorm1d(dim)
+
+        nn3 = Sequential(Linear(dim, dim), ReLU(), Linear(dim, dim))
+        self.conv3 = GINConv(nn3)
+        self.bn3 = torch.nn.BatchNorm1d(dim)
+
+        nn4 = Sequential(Linear(dim, dim), ReLU(), Linear(dim, dim))
+        self.conv4 = GINConv(nn4)
+        self.bn4 = torch.nn.BatchNorm1d(dim)
+
+        nn5 = Sequential(Linear(dim, dim), ReLU(), Linear(dim, dim))
+        self.conv5 = GINConv(nn5)
+        self.bn5 = torch.nn.BatchNorm1d(dim)
+
+        self.fc1 = Linear(dim, dim)
+        self.fc2 = Linear(dim, dataset.num_classes)
 
     def forward(self, x, edge_index, batch):
-        x = F.dropout(x, p=0.6, training=self.training)
-        x = F.elu(self.conv1(x, edge_index))
-        # x = F.dropout(x, p=0.6, training=self.training)
-        # x = F.elu(self.conv2(x, edge_index))
-        # x = F.dropout(x, p=0.6, training=self.training)
-        # x = F.elu(self.conv3(x, edge_index))
-        x = F.dropout(x, p=0.6, training=self.training)
-        x = self.conv4(x, edge_index)
+        x = F.relu(self.conv1(x, edge_index))
+        x = self.bn1(x)
+        x = F.relu(self.conv2(x, edge_index))
+        x = self.bn2(x)
+        x = F.relu(self.conv3(x, edge_index))
+        x = self.bn3(x)
+        x = F.relu(self.conv4(x, edge_index))
+        x = self.bn4(x)
+        x = F.relu(self.conv5(x, edge_index))
+        x = self.bn5(x)
         x = global_add_pool(x, batch)
         x = F.relu(self.fc1(x))
         x = F.dropout(x, p=0.5, training=self.training)
         x = self.fc2(x)
         return F.log_softmax(x, dim=-1)
 
+# class Net(torch.nn.Module):
+#     def __init__(self):
+#         super(Net, self).__init__()
+#         self.conv1 = GATConv(dataset.num_features, 8, heads=16, dropout=0.2, concat=False)
+#         self.bn1 = BatchNorm1d(128 * 1)
+#         self.conv2 = GATConv(8 * 16, 8, heads=16, dropout=0.2, concat=True)
+#         self.bn2 = BatchNorm1d(128 * 1)
+#         self.conv3 = GATConv(8 * 16, 8, heads=16, dropout=0.2, concat=True)
+#         self.bn3 = BatchNorm1d(128 * 1)
+#         self.conv4 = GATConv(8 * 16, 8, heads=16, dropout=0.2)
+#         self.bn4 = BatchNorm1d(128 * 1)
+#         self.conv5 = GATConv(8 * 16, 8, heads=16, dropout=0.2, concat=True)
+#         self.bn5 = BatchNorm1d(128 * 1)
+#         self.bn6 = BatchNorm1d(128 * 1)
+# 
+#         self.fc0 = Linear(dataset.num_features, 128)
+#         self.fc1 = Linear(128, 64)
+#         self.fc2 = Linear(64, dataset.num_classes)
+# 
+#     def forward(self, x, edge_index, batch):
+# 
+#         x = self.fc0(x)
+#         x = self.bn1(x)
+#         x = F.dropout(x, p=0.2, training=self.training)
+#         z = x
+#         x = F.elu(self.conv1(x, edge_index))
+#         x = z + x
+# 
+#         x = self.bn2(x)
+#         x = F.dropout(x, p=0.2, training=self.training)
+#         z = x
+#         x = F.elu(self.conv2(x, edge_index))
+#         x = z + x
+# 
+#         x = self.bn3(x)
+#         x = F.dropout(x, p=0.2, training=self.training)
+#         z = x
+#         x = F.elu(self.conv3(x, edge_index))
+#         x = z + x
+# 
+#         x = self.bn4(x)
+#         x = F.dropout(x, p=0.2, training=self.training)
+#         z = x
+#         x = self.conv4(x, edge_index)
+#         x = z + x
+# 
+#         x = self.bn5(x)
+#         x = F.dropout(x, p=0.2, training=self.training)
+#         z = x
+#         x = F.elu(self.conv5(x, edge_index))
+#         x = z + x
+# 
+#         x = global_add_pool(x, batch)
+#         x = self.bn6(x)
+# 
+#         x = F.relu(self.fc1(x))
+#         x = F.dropout(x, p=0.2, training=self.training)
+#         x = self.fc2(x)
+#         return F.log_softmax(x, dim=-1)
+
 def train(model, optimizer, epoch):
     model.train()
 
-    # if epoch == 51:
-    #     for param_group in optimizer.param_groups:
-    #         param_group['lr'] = 0.5 * param_group['lr']
+    if epoch == 51:
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = 0.5 * param_group['lr']
 
     loss_all = 0
     for data in train_loader:
@@ -200,14 +235,14 @@ train_losses, test_losses, train_accs, test_accs = [], [], [], []
 kf = KFold(n_splits=10)
 for train_index, test_index in kf.split(data_index, data_index):
     model = Net().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     train_index = list(train_index)
     test_index = list(test_index)
     cv_train_losses, cv_test_losses, cv_train_accs, cv_test_accs = ([] for i in range(4))
     test_dataset = load_data(dataset, test_index)
     train_dataset = load_data(dataset, train_index)
-    test_loader = DataLoader(test_dataset, batch_size=128)
-    train_loader = DataLoader(train_dataset, batch_size=128)
+    test_loader = DataLoader(test_dataset, batch_size=512)
+    train_loader = DataLoader(train_dataset, batch_size=512)
     for epoch in range(1, 1001):
         train_loss = train(model, optimizer, epoch)
         train_acc, _ = test(model, train_loader)

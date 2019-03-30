@@ -2,6 +2,7 @@ import os.path as osp
 import numpy as np
 from sklearn.model_selection import KFold
 from util import plot_loss_and_acc
+import time
 
 import torch
 from torch.nn import BatchNorm1d
@@ -15,8 +16,8 @@ from torch_geometric.utils import add_self_loops
 from torch_scatter import scatter_add
 from attention_conv import GATConv
 
-path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'NCI1')
-dataset = TUDataset(path, name='NCI1').shuffle()
+path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'DD')
+dataset = TUDataset(path, name='DD').shuffle()
 data_index = range(len(dataset))
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 n_components = dataset.num_classes
@@ -73,7 +74,7 @@ class Net(torch.nn.Module):
         self.conv5 = GATConv(1 * 128, 1, heads=128, dropout=0.2,concat=True)
         self.bn5 = BatchNorm1d(128 * 1)
         self.bn6 = BatchNorm1d(128 * 1)
-        self.fc0=Linear(dataset.num_features,128)
+        self.fc0=Linear(dataset.num_features, 128)
         self.concat=torch.cat
 
         self.fc1 = Linear(128, 64)
@@ -180,15 +181,18 @@ if __name__ == '__main__':
         cv_train_losses, cv_test_losses, cv_train_accs, cv_test_accs = ([] for i in range(4))
         test_dataset = load_data(dataset, test_index)
         train_dataset = load_data(dataset, train_index)
-        test_loader = DataLoader(test_dataset, batch_size=512)
-        train_loader = DataLoader(train_dataset, batch_size=512)
+        test_loader = DataLoader(test_dataset, batch_size=64)
+        train_loader = DataLoader(train_dataset, batch_size=64)
+
         for epoch in range(1, 200):
+            start = time.time()
             train_loss = train(model, optimizer, epoch)
             train_acc, _ = test(model, train_loader)
             test_acc, test_loss = test(model, test_loader)
+            end = time.time()
             print('Epoch: {:03d}, Train Loss: {:.7f}, Test Loss: {:.7f}, '
-                  'Train Acc: {:.7f}, Test Acc: {:.7f}'.format(epoch, train_loss, test_loss,
-                                                               train_acc, test_acc))
+                  'Train Acc: {:.7f}, Test Acc: {:.7f}, Time: {:.2f}'.format(epoch, train_loss, test_loss,
+                                                               train_acc, test_acc, end-start))
             cv_train_losses.append(train_loss)
             cv_test_losses.append(test_loss)
             cv_train_accs.append(train_acc)
