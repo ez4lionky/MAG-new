@@ -20,7 +20,7 @@ from pool_layer import DiffPoolSparse
 
 max_degree = 10000
 
-dataset_name = 'MUTAG'
+dataset_name = 'PROTEINS'
 path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', dataset_name)
 result_path = osp.join(osp.dirname(osp.realpath(__file__)),  '..', 'Results', dataset_name, 'tmp.txt')
 dataset = TUDataset(
@@ -34,12 +34,12 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(0)
 n_components = dataset.num_classes
 
-blocks = 5
-block_in_channels = [32, 32, 32, 32, 32]
-block_out_channels = [32, 32, 32, 32, 32]
-edge_filters_num_list = [16, 16, 16, 16, 16]
-learning_rate = 0.01
-dropout_rate = 0.2
+blocks = 3
+block_in_channels = [32, 32, 32]
+block_out_channels = [32, 32, 32]
+edge_filters_num_list = [8, 8, 8]
+learning_rate = 0.001
+dropout_rate = 0.3
 batch_size = 128
 
 class MyRelu(torch.nn.Module):
@@ -174,7 +174,7 @@ if __name__ == '__main__':
         i += 1
 
         model = Net().to(device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-3)
+        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
         train_index = list(train_index)
         test_index = list(test_index)
         cv_train_losses, cv_test_losses, cv_train_accs, cv_test_accs = ([] for i in range(4))
