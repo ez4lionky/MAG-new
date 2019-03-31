@@ -3,7 +3,8 @@ import os
 import os.path as osp
 import matplotlib.pyplot as plt
 
-def plot_loss_and_acc(epoch, train_losses, test_losses, train_accs, test_accs, fpath='../Graphs/cv_fig'):
+def plot_loss_and_acc(epoch, train_losses, test_losses, train_accs, test_accs, fpath='fig1'):
+    fpath = '../Graphs/' + fpath
     plt.figure()
     ax1 = plt.subplot(211)
     l1, = plt.plot(range(epoch), train_losses, 'b', label='train_losses')
@@ -24,6 +25,7 @@ def plot_loss_and_acc(epoch, train_losses, test_losses, train_accs, test_accs, f
     plt.tight_layout(h_pad=3)
     ax2.set_title('D-GAT_SUM Acc - Epoch curve')
     plt.legend(handles=[l3, l4], labels=['Train_accs', 'Test_accs'], loc='best')
+    print(fpath)
     plt.savefig(fpath)
 
 
@@ -43,3 +45,9 @@ def read_cv(path, i):
     test_index = list(np.loadtxt(fpath + '_test_index', dtype='int32'))
 
     return  train_index, test_index
+
+
+def write_result(line, fpath):
+    with open(fpath, 'a') as f:
+        f.writelines(line + '\n')
+

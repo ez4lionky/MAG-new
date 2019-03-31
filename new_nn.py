@@ -2,7 +2,7 @@ import time
 import os.path as osp
 import numpy as np
 from sklearn.model_selection import StratifiedKFold
-from util import plot_loss_and_acc, make_cv, read_cv
+from util import *
 
 import torch
 from torch.nn import BatchNorm1d
@@ -20,24 +20,25 @@ from pool_layer import DiffPoolSparse
 
 max_degree = 10000
 
-path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'MUTAG')
+dataset_name = 'MUTAG'
+path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', dataset_name)
+result_path = osp.join(osp.dirname(osp.realpath(__file__)),  '..', 'Results', dataset_name, 'tmp.txt')
 dataset = TUDataset(
     path,
-    name='MUTAG',
+    name=dataset_name,
     # transform=T.OneHotDegree(max_degree),
 )
 label = dataset.data.y
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(0)
 n_components = dataset.num_classes
 
-node_features = []
-graph_features = []
-degree = []
-blocks = 3
-block_in_channels = [8, 16, 16]
-block_out_channels = [16, 16, 16]
-edge_filters_num_list = [8, 8, 8]
-learning_rate = 0.001
+blocks = 5
+block_in_channels = [32, 32, 32, 32, 32]
+block_out_channels = [32, 32, 32, 32, 32]
+edge_filters_num_list = [16, 16, 16, 16, 16]
+learning_rate = 0.01
 dropout_rate = 0.2
 batch_size = 128
 
@@ -120,11 +121,12 @@ class Net(torch.nn.Module):
 def train(model, optimizer, epoch):
     model.train()
 
-    # if epoch % 50 == 0 :
-    #    for param_group in optimizer.param_groups:
-    #        param_group['lr'] = 0.5 * param_group['lr']
+    if epoch % 50 == 0 :
+       for param_group in optimizer.param_groups:
+           param_group['lr'] = 0.5 * param_group['lr']
 
     loss_all = 0
+
     for data in train_loader:
         data = data.to(device)
         optimizer.zero_grad()
@@ -161,6 +163,8 @@ def load_data(data, index):
 
 if __name__ == '__main__':
     np.set_printoptions(threshold=10000)
+    torch.manual_seed(0)
+    np.random.seed(0)
     train_losses, test_losses, train_accs, test_accs = [], [], [], []
     skf = StratifiedKFold(n_splits=10)
     i = 0
@@ -170,7 +174,7 @@ if __name__ == '__main__':
         i += 1
 
         model = Net().to(device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-3)
         train_index = list(train_index)
         test_index = list(test_index)
         cv_train_losses, cv_test_losses, cv_train_accs, cv_test_accs = ([] for i in range(4))
@@ -178,22 +182,24 @@ if __name__ == '__main__':
         train_dataset = load_data(dataset, train_index)
         test_loader = DataLoader(test_dataset, batch_size=batch_size)
         train_loader = DataLoader(train_dataset, batch_size=batch_size)
-        for epoch in range(1, 400):
+        for epoch in range(1, 201):
             start = time.time()
             train_loss = train(model, optimizer, epoch)
             train_acc, _ = test(model, train_loader)
             test_acc, test_loss = test(model, test_loader)
             end = time.time()
+            line = ('Epoch: {:03d}, Train Loss: {:.7f}, Test Loss: {:.7f}, '
+            'Train Acc: {:.7f}, Test Acc: {:.7f}, Time: {:.2f}'.format(epoch, train_loss, test_loss,
+                                                                       train_acc, test_acc, end - start))
+            write_result(line, result_path)
             if epoch % 2 == 0:
-              print('Epoch: {:03d}, Train Loss: {:.7f}, Test Loss: {:.7f}, '
-                    'Train Acc: {:.7f}, Test Acc: {:.7f}, Time: {:.2f}'.format(epoch, train_loss, test_loss,
-                                                                 train_acc, test_acc, end-start))
+              print(line)
             cv_train_losses.append(train_loss)
             cv_test_losses.append(test_loss)
             cv_train_accs.append(train_acc)
             cv_test_accs.append(test_acc)
 
-        plot_loss_and_acc(epoch, cv_train_losses, cv_test_losses, cv_train_accs, cv_test_accs)
+        # plot_loss_and_acc(epoch, cv_train_losses, cv_test_losses, cv_train_accs, cv_test_accs, fpath='../Graphs/cv_fig')
         train_losses.append(cv_train_losses)
         test_losses.append(cv_test_losses)
         train_accs.append(cv_train_accs)
@@ -205,4 +211,8 @@ if __name__ == '__main__':
     train_accs = np.mean(train_accs, axis=0)
     test_accs = np.mean(test_accs, axis=0)
 
-    plot_loss_and_acc(epoch, train_losses, test_losses, train_accs, test_accs, fpath='../Graphs/mean_fig')
+    # Change filename
+    os.rename(result_path, result_path[:-7] + dataset_name + '_acc_{:.5f}.txt'.format(test_accs[-1]))
+    # write_result()
+    graph_path = dataset_name + '/' + dataset_name + '_acc_{:.5f}.png'.format(test_accs[-1])
+    plot_loss_and_acc(epoch, train_losses, test_losses, train_accs, test_accs, graph_path)

@@ -30,7 +30,7 @@ class MyLinear(torch.nn.Module):
             torch.Tensor(subgraph_filters_num,edge_filters_num,1) ##(subgraph_filters_num,edge_filters_num,1)
         )
         self.bias = torch.nn.Parameter(
-            torch.Tensor(subgraph_filters_num,1)
+            torch.Tensor(subgraph_filters_num, 1)
         )
         self.reset_parameters()
     def forward(self, x):
@@ -78,7 +78,7 @@ class EdgeConv(MessagePassing):
         )
 
         self.affine_bias1=torch.nn.Parameter(
-            torch.Tensor(self.subgraph_filters_num, 1,1)
+            torch.Tensor(self.subgraph_filters_num, 1, 1)
         )
         self.bn=BatchNorm1d(self.subgraph_filters_num*self.edge_filters_num)
         #print(self.affine_weights.size())
