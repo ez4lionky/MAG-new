@@ -51,3 +51,6 @@ def write_result(line, fpath):
     with open(fpath, 'a') as f:
         f.writelines(line + '\n')
 
+def remove_legacy(fpath):
+    if os.path.exists(fpath):
+        os.remove(fpath)
