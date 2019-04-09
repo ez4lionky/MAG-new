@@ -21,7 +21,7 @@ from pool_layer import DiffPoolSparse
 
 max_degree = 10000
 
-dataset_name = 'IMDB-BINARY'
+dataset_name = 'IMDB-MULTI'
 path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', dataset_name)
 result_path = osp.join(osp.dirname(osp.realpath(__file__)),  '..', 'Results', dataset_name, 'tmp.txt')
 dataset = TUDataset(
@@ -36,23 +36,24 @@ n_components = dataset.num_classes
 parser = argparse.ArgumentParser(description='Edge convolutional network for graph classification')
 parser.add_argument('--batch_size', type=int, default=128,
                     help='input batch size for training (default: 128)')
-parser.add_argument('--epochs', type=int, default=201,
+parser.add_argument('--epochs', type=int, default=101,
                     help='number of epochs to train (default: 350)')
 parser.add_argument('--lr', type=float, default=0.0001,
                     help='learning rate (default: 0.01)')
 parser.add_argument('--seed', type=int, default=100,
                     help='random seed for splitting the dataset into 10 (default: 0)')
-parser.add_argument('--num_blocks', type=int, default=2,
+parser.add_argument('--num_blocks', type=int, default=3,
                     help='number of layers INCLUDING the input one (default: 3)')
-parser.add_argument('--num_edge_filters', type=int, default=16,
+parser.add_argument('--num_edge_filters', type=int, default=32,
                     help='number of edge filters (default: 8)')
-parser.add_argument('--block_in_dim', type=str, default='16-16',
+parser.add_argument('--block_in_dim', type=str, default='32-32-32',
                     help='number of block input dim (default: \'8-32-32\')')
-parser.add_argument('--block_out_dim', type=str, default='16-16',
+parser.add_argument('--block_out_dim', type=str, default='32-32-32'
+                                                         '',
                     help='number of block output dim (default: \'32-32-32\')')
-parser.add_argument('--mlp_dim', type=int, default=32,
+parser.add_argument('--mlp_dim', type=int, default=64,
                     help='number of hidden units (default: 64)')
-parser.add_argument('--weight_decay', type=float, default=1e-3,
+parser.add_argument('--weight_decay', type=float, default=2e-3,
                     help='number of hidden units (default: 1e-4)')
 parser.add_argument('--dropout', type=float, default=0.2,
                         help='dropout rate(default: 0.2)')
@@ -143,41 +144,49 @@ class Net(torch.nn.Module):
         return x
 
 
-def train(model, optimizer, epoch, train_dataset):
+def train(model, optimizer, epoch):
+# def train(model, optimizer, epoch, train_dataset):
     model.train()
 
-    # if epoch % 50 == 0 :
+    # if epoch % 50 == 0:
     #    for param_group in optimizer.param_groups:
     #        param_group['lr'] = 0.5 * param_group['lr']
 
     loss_all = 0
 
-    for _ in range(20):
-        selected_idx = np.random.permutation(len(train_dataset))[:batch_size]
-        data = [train_dataset[idx] for idx in selected_idx]
-        tmp_train_loader = DataLoader(data, batch_size)
-        for data in tmp_train_loader:
-            data = data.to(device)
-            optimizer.zero_grad()
-            output = model(data.x, data.edge_index, data.batch)
-            loss = F.nll_loss(output, data.y)
-            loss.backward()
-            loss_all += loss.item() * data.num_graphs
-            optimizer.step()
-        del tmp_train_loader
+    # if epoch<=100 and epoch % 25 == 0 :
+    #     for param_group in optimizer.param_groups:
+    #            param_group['lr'] = 0.5 * param_group['lr']
+    # elif epoch % 50==0:
+    #     for param_group in optimizer.param_groups:
+    #         param_group['lr'] = 0.5 * param_group['lr']
 
-    train_acc, _ = test(model, train_loader)
-    return loss_all / (20 * batch_size), train_acc
+    # for _ in range(20):
+    #     selected_idx = np.random.permutation(len(train_dataset))[:batch_size]
+    #     data = [train_dataset[idx] for idx in selected_idx]
+    #     tmp_train_loader = DataLoader(data, batch_size)
+    #     for data in tmp_train_loader:
+    #         data = data.to(device)
+    #         optimizer.zero_grad()
+    #         output = model(data.x, data.edge_index, data.batch)
+    #         loss = F.nll_loss(output, data.y)
+    #         loss.backward()
+    #         loss_all += loss.item() * data.num_graphs
+    #         optimizer.step()
+    #     del tmp_train_loader
+    #
+    # train_acc, _ = test(model, train_loader)
+    # return loss_all / (20 * batch_size), train_acc
 
-    # for data in train_loader:
-    #     data = data.to(device)
-    #     optimizer.zero_grad()
-    #     output = model(data.x, data.edge_index, data.batch)
-    #     loss = F.nll_loss(output, data.y)
-    #     loss.backward()
-    #     loss_all += loss.item() * data.num_graphs
-    #     optimizer.step()
-    # return loss_all / len(train_dataset)
+    for data in train_loader:
+        data = data.to(device)
+        optimizer.zero_grad()
+        output = model(data.x, data.edge_index, data.batch)
+        loss = F.nll_loss(output, data.y)
+        loss.backward()
+        loss_all += loss.item() * data.num_graphs
+        optimizer.step()
+    return loss_all / len(train_dataset)
 
 
 def test(model, loader):
@@ -211,10 +220,9 @@ if __name__ == '__main__':
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
     train_losses, test_losses, train_accs, test_accs = [], [], [], []
-    skf = StratifiedKFold(n_splits=10)
+    skf = StratifiedKFold(n_splits=10, random_state=args.seed)
     i = 0
     for train_index, test_index in skf.split(range(len(label)), label):
-    # for j in range(4):
         # make_cv(path, i, train_index, test_index)
         # cv_5 cv_6 cv_7 cv_8 性能差
         if i==0:
@@ -232,11 +240,11 @@ if __name__ == '__main__':
         train_dataset = load_data(dataset, train_index)
         test_loader = DataLoader(test_dataset, batch_size=batch_size)
         train_loader = DataLoader(train_dataset, batch_size=batch_size)
-        for epoch in range(1, 201):
+        for epoch in range(1, args.epochs):
             start = time.time()
-            # train_loss = train(model, optimizer, epoch)
-            # train_acc, _ = test(model, train_loader)
-            train_loss, train_acc = train(model, optimizer, epoch, train_dataset)
+            train_loss = train(model, optimizer, epoch)
+            train_acc, _ = test(model, train_loader)
+            # train_loss, train_acc = train(model, optimizer, epoch, train_dataset)
             test_acc, test_loss = test(model, test_loader)
             end = time.time()
             line = ('Epoch: {:03d}, Train Loss: {:.7f}, Test Loss: {:.7f}, '

@@ -115,7 +115,6 @@ class EdgeConv(MessagePassing):
 
     def update(self, aggr_out):
         # aggr_out has shape [nodes_num, out_channels]
-        aggr_out= aggr_out.view(-1, self.subgraph_filters_num * self.edge_filters_num)
         aggr_out = self.bn(aggr_out)
         aggr_out = aggr_out.view(-1, self.subgraph_filters_num, 1, self.edge_filters_num)
         # [nodes_num,subgraph_filters_num,1,edge_filters_num]
@@ -124,6 +123,7 @@ class EdgeConv(MessagePassing):
             aggr_out = F.dropout(aggr_out, p=self.dropout, training=self.training)
         # [nodes_num,subgraph_filters_num,1,edge_filters_num]
         aggr_out = F.relu(torch.matmul(aggr_out, self.affine_weights0) + self.affine_bias0)
+
         aggr_out = F.relu(torch.matmul(aggr_out, self.affine_weights1) + self.affine_bias1)
         # [nodes_num,subgraph_filters_num,1,1]
         aggr_out.squeeze_()  # (nodes_num,subgraph_filters_num)
