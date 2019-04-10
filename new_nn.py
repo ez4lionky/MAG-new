@@ -21,7 +21,7 @@ from pool_layer import DiffPoolSparse
 
 max_degree = 10000
 
-dataset_name = 'IMDB-MULTI'
+dataset_name = 'PTC_MR'
 path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', dataset_name)
 result_path = osp.join(osp.dirname(osp.realpath(__file__)),  '..', 'Results', dataset_name, 'tmp.txt')
 dataset = TUDataset(
@@ -36,24 +36,23 @@ n_components = dataset.num_classes
 parser = argparse.ArgumentParser(description='Edge convolutional network for graph classification')
 parser.add_argument('--batch_size', type=int, default=128,
                     help='input batch size for training (default: 128)')
-parser.add_argument('--epochs', type=int, default=101,
+parser.add_argument('--epochs', type=int, default=201,
                     help='number of epochs to train (default: 350)')
-parser.add_argument('--lr', type=float, default=0.0001,
+parser.add_argument('--lr', type=float, default=0.001,
                     help='learning rate (default: 0.01)')
 parser.add_argument('--seed', type=int, default=100,
                     help='random seed for splitting the dataset into 10 (default: 0)')
-parser.add_argument('--num_blocks', type=int, default=3,
+parser.add_argument('--num_blocks', type=int, default=5,
                     help='number of layers INCLUDING the input one (default: 3)')
-parser.add_argument('--num_edge_filters', type=int, default=32,
-                    help='number of edge filters (default: 8)')
-parser.add_argument('--block_in_dim', type=str, default='32-32-32',
-                    help='number of block input dim (default: \'8-32-32\')')
-parser.add_argument('--block_out_dim', type=str, default='32-32-32'
-                                                         '',
-                    help='number of block output dim (default: \'32-32-32\')')
-parser.add_argument('--mlp_dim', type=int, default=64,
+parser.add_argument('--edge_filters_dim', type=int, default=32,
+                    help='dimension of edge filter (default: 8)')
+parser.add_argument('--block_in_dim', type=str, default='16-16-16-16-16',
+                    help='number of pre-layer\'s subgraph edge filter (default: \'8-32-32\')')
+parser.add_argument('--block_out_dim', type=str, default='16-16-16-16-16',
+                    help='number of current layer\'s subgraph edge filter (default: \'32-32-32\')')
+parser.add_argument('--mlp_dim', type=int, default=32,
                     help='number of hidden units (default: 64)')
-parser.add_argument('--weight_decay', type=float, default=2e-3,
+parser.add_argument('--weight_decay', type=float, default=1e-3,
                     help='number of hidden units (default: 1e-4)')
 parser.add_argument('--dropout', type=float, default=0.2,
                         help='dropout rate(default: 0.2)')
@@ -62,7 +61,7 @@ args = parser.parse_args()
 blocks = args.num_blocks
 block_in_channels = [int(_) for _ in args.block_in_dim.split('-')]
 block_out_channels = [int(_) for _ in args.block_out_dim.split('-')]
-edge_filters_num_list = [args.num_edge_filters for _ in range(blocks)]
+edge_filters_num_list = [args.edge_filters_dim for _ in range(blocks)]
 learning_rate = args.lr
 dropout_rate = args.dropout
 batch_size = args.batch_size
@@ -154,12 +153,12 @@ def train(model, optimizer, epoch):
 
     loss_all = 0
 
-    # if epoch<=100 and epoch % 25 == 0 :
-    #     for param_group in optimizer.param_groups:
-    #            param_group['lr'] = 0.5 * param_group['lr']
-    # elif epoch % 50==0:
-    #     for param_group in optimizer.param_groups:
-    #         param_group['lr'] = 0.5 * param_group['lr']
+    if epoch<=100 and epoch % 25 == 0 :
+        for param_group in optimizer.param_groups:
+               param_group['lr'] = 0.5 * param_group['lr']
+    elif epoch % 50==0:
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = 0.5 * param_group['lr']
 
     # for _ in range(20):
     #     selected_idx = np.random.permutation(len(train_dataset))[:batch_size]
