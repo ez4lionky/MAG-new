@@ -19,44 +19,47 @@ from torch_scatter import scatter_add
 from EdgeConv import EdgeConv
 from pool_layer import DiffPoolSparse
 
-max_degree = 10000
-
-dataset_name = 'PTC_MR'
-path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', dataset_name)
-result_path = osp.join(osp.dirname(osp.realpath(__file__)),  '..', 'Results', dataset_name, 'tmp.txt')
-dataset = TUDataset(
-    path,
-    name=dataset_name,
-    transform=T.OneHotDegree(max_degree),
-)
-label = dataset.data.y
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-n_components = dataset.num_classes
-
 parser = argparse.ArgumentParser(description='Edge convolutional network for graph classification')
-parser.add_argument('--batch_size', type=int, default=128,
+parser.add_argument('--dataset_name', type=str, default='COLLAB',
+                    help='Dataset name (default: MUTAG)')
+parser.add_argument('--batch_size', type=int, default=32,
                     help='input batch size for training (default: 128)')
-parser.add_argument('--epochs', type=int, default=201,
+parser.add_argument('--epochs', type=int, default=101,
                     help='number of epochs to train (default: 350)')
 parser.add_argument('--lr', type=float, default=0.001,
                     help='learning rate (default: 0.01)')
 parser.add_argument('--seed', type=int, default=100,
                     help='random seed for splitting the dataset into 10 (default: 0)')
-parser.add_argument('--num_blocks', type=int, default=5,
+parser.add_argument('--num_blocks', type=int, default=3,
                     help='number of layers INCLUDING the input one (default: 3)')
-parser.add_argument('--edge_filters_dim', type=int, default=32,
+parser.add_argument('--edge_filters_dim', type=int, default=16,
                     help='dimension of edge filter (default: 8)')
-parser.add_argument('--block_in_dim', type=str, default='16-16-16-16-16',
-                    help='number of pre-layer\'s subgraph edge filter (default: \'8-32-32\')')
-parser.add_argument('--block_out_dim', type=str, default='16-16-16-16-16',
+parser.add_argument('--block_in_dim', type=str, default='8-8-8',
+                    help='the transformed input dimension and number of pre-layer\'s subgraph edge filter (default: \'8-32-32\')')
+parser.add_argument('--block_out_dim', type=str, default='8-8-8',
                     help='number of current layer\'s subgraph edge filter (default: \'32-32-32\')')
-parser.add_argument('--mlp_dim', type=int, default=32,
+parser.add_argument('--mlp_dim', type=int, default=16,
                     help='number of hidden units (default: 64)')
-parser.add_argument('--weight_decay', type=float, default=1e-3,
+parser.add_argument('--weight_decay', type=float, default=1e-4,
                     help='number of hidden units (default: 1e-4)')
 parser.add_argument('--dropout', type=float, default=0.2,
                         help='dropout rate(default: 0.2)')
 args = parser.parse_args()
+
+
+max_degree = 10000
+
+path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', args.dataset_name)
+result_path = osp.join(osp.dirname(osp.realpath(__file__)),  '..', 'Results', args.dataset_name, 'tmp.txt')
+dataset = TUDataset(
+    path,
+    name=args.dataset_name,
+    transform=T.OneHotDegree(max_degree),
+)
+
+label = dataset.data.y
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+n_components = dataset.num_classes
 
 blocks = args.num_blocks
 block_in_channels = [int(_) for _ in args.block_in_dim.split('-')]
@@ -147,18 +150,11 @@ def train(model, optimizer, epoch):
 # def train(model, optimizer, epoch, train_dataset):
     model.train()
 
-    # if epoch % 50 == 0:
-    #    for param_group in optimizer.param_groups:
-    #        param_group['lr'] = 0.5 * param_group['lr']
+    if epoch % 50 == 0:
+       for param_group in optimizer.param_groups:
+           param_group['lr'] = 0.5 * param_group['lr']
 
     loss_all = 0
-
-    if epoch<=100 and epoch % 25 == 0 :
-        for param_group in optimizer.param_groups:
-               param_group['lr'] = 0.5 * param_group['lr']
-    elif epoch % 50==0:
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = 0.5 * param_group['lr']
 
     # for _ in range(20):
     #     selected_idx = np.random.permutation(len(train_dataset))[:batch_size]
@@ -257,12 +253,16 @@ if __name__ == '__main__':
             cv_train_accs.append(train_acc)
             cv_test_accs.append(test_acc)
 
+
+        graph_path = args.dataset_name + '/cv_fig'
+        if i == 1:
+            plot_loss_and_acc(epoch, cv_train_losses, cv_test_losses, cv_train_accs, cv_test_accs, graph_path)
+
         # plot_loss_and_acc(epoch, cv_train_losses, cv_test_losses, cv_train_accs, cv_test_accs, fpath='../Graphs/cv_fig')
         train_losses.append(cv_train_losses)
         test_losses.append(cv_test_losses)
         train_accs.append(cv_train_accs)
         test_accs.append(cv_test_accs)
-
 
     train_losses = np.mean(train_losses, axis=0)
     test_losses = np.mean(test_losses, axis=0)
@@ -270,7 +270,7 @@ if __name__ == '__main__':
     test_accs = np.mean(test_accs, axis=0)
 
     # Change filename
-    os.rename(result_path, result_path[:-7] + dataset_name + '_acc_{:.5f}.txt'.format(test_accs[-1]))
+    os.rename(result_path, result_path[:-7] + args.dataset_name + '_acc_{:.5f}.txt'.format(test_accs[-1]))
     # write_result()
-    graph_path = dataset_name + '/' + dataset_name + '_acc_{:.5f}.png'.format(test_accs[-1])
+    graph_path = args.dataset_name + '/' + args.dataset_name + '_acc_{:.5f}.png'.format(test_accs[-1])
     plot_loss_and_acc(epoch, train_losses, test_losses, train_accs, test_accs, graph_path)

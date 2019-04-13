@@ -23,24 +23,6 @@ def zeros(tensor):
 #edge_filters_dim=16
 #subgraph_filters_num=32
 
-class MyLinear(torch.nn.Module):
-    def __init__(self,subgraph_filters_num,edge_filters_dim):
-        super().__init__()
-        self.weights = torch.nn.Parameter(
-            torch.Tensor(subgraph_filters_num,edge_filters_dim,1) ##(subgraph_filters_num,edge_filters_dim,1)
-        )
-        self.bias = torch.nn.Parameter(
-            torch.Tensor(subgraph_filters_num, 1)
-        )
-        self.reset_parameters()
-    def forward(self, x):
-        x = F.relu(torch.matmul(x,self.weights)+self.bias)
-        return x
-    def reset_parameters(self):
-        glorot(self.weights)
-        zeros(self.bias)
-
-
 class EdgeConv(MessagePassing):
 
     def __init__(self,
@@ -117,16 +99,17 @@ class EdgeConv(MessagePassing):
         # aggr_out has shape [nodes_num, out_channels]
         aggr_out = self.bn(aggr_out)
         aggr_out = aggr_out.view(-1, self.subgraph_filters_num, 1, self.edge_filters_dim)
-        # [nodes_num,subgraph_filters_num,1,edge_filters_dim]
-        # aggr_out= F.relu(torch.matmul(aggr_out, self.affine_weights0)+self.affine_bias0)
+        # # [nodes_num,subgraph_filters_num,1,edge_filters_dim]
+        # # aggr_out= F.relu(torch.matmul(aggr_out, self.affine_weights0)+self.affine_bias0)
         if self.training and self.dropout > 0:
             aggr_out = F.dropout(aggr_out, p=self.dropout, training=self.training)
-        # [nodes_num,subgraph_filters_num,1,edge_filters_dim]
+        # # [nodes_num,subgraph_filters_num,1,edge_filters_dim]
         aggr_out = F.relu(torch.matmul(aggr_out, self.affine_weights0) + self.affine_bias0)
         aggr_out = F.relu(torch.matmul(aggr_out, self.affine_weights1) + self.affine_bias1)
-        # [nodes_num,subgraph_filters_num,1,1]
+        # # [nodes_num,subgraph_filters_num,1,1]
         aggr_out.squeeze_()  # (nodes_num,subgraph_filters_num)
         return aggr_out
+
     def __repr__(self):
         return '{}({}, {}, edge_filters_dim={})'.format(self.__class__.__name__,
                                              self.in_channels,
