@@ -2,6 +2,7 @@ import time
 import argparse
 import os.path as osp
 import numpy as np
+import networkx as nx
 from sklearn.model_selection import StratifiedKFold
 from util import *
 
@@ -14,35 +15,36 @@ from torch_geometric.datasets import TUDataset
 import torch_geometric.transforms as T
 from torch_geometric.data import DataLoader
 from torch_geometric.nn import global_add_pool, global_max_pool, global_mean_pool
-from torch_geometric.utils import add_self_loops
+from torch_geometric.utils import add_self_loops, to_networkx
 from torch_scatter import scatter_add
 from EdgeConv import EdgeConv
 from pool_layer import DiffPoolSparse
+import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser(description='Edge convolutional network for graph classification')
-parser.add_argument('--dataset_name', type=str, default='COLLAB',
+parser.add_argument('--dataset_name', type=str, default='MUTAG',
                     help='Dataset name (default: MUTAG)')
-parser.add_argument('--batch_size', type=int, default=32,
+parser.add_argument('--batch_size', type=int, default=50,
                     help='input batch size for training (default: 128)')
-parser.add_argument('--epochs', type=int, default=101,
+parser.add_argument('--epochs', type=int, default=501,
                     help='number of epochs to train (default: 350)')
-parser.add_argument('--lr', type=float, default=0.001,
+parser.add_argument('--lr', type=float, default=0.01,
                     help='learning rate (default: 0.01)')
 parser.add_argument('--seed', type=int, default=100,
                     help='random seed for splitting the dataset into 10 (default: 0)')
-parser.add_argument('--num_blocks', type=int, default=3,
+parser.add_argument('--num_blocks', type=int, default=5,
                     help='number of layers INCLUDING the input one (default: 3)')
 parser.add_argument('--edge_filters_dim', type=int, default=16,
                     help='dimension of edge filter (default: 8)')
-parser.add_argument('--block_in_dim', type=str, default='8-8-8',
+parser.add_argument('--block_in_dim', type=str, default='32-32-32-32-32',
                     help='the transformed input dimension and number of pre-layer\'s subgraph edge filter (default: \'8-32-32\')')
-parser.add_argument('--block_out_dim', type=str, default='8-8-8',
+parser.add_argument('--block_out_dim', type=str, default='32-32-32-32-32',
                     help='number of current layer\'s subgraph edge filter (default: \'32-32-32\')')
-parser.add_argument('--mlp_dim', type=int, default=16,
+parser.add_argument('--mlp_dim', type=int, default=64,
                     help='number of hidden units (default: 64)')
 parser.add_argument('--weight_decay', type=float, default=1e-4,
                     help='number of hidden units (default: 1e-4)')
-parser.add_argument('--dropout', type=float, default=0.2,
+parser.add_argument('--dropout', type=float, default=0.5,
                         help='dropout rate(default: 0.2)')
 args = parser.parse_args()
 
@@ -53,8 +55,8 @@ path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', args.dataset_
 result_path = osp.join(osp.dirname(osp.realpath(__file__)),  '..', 'Results', args.dataset_name, 'tmp.txt')
 dataset = TUDataset(
     path,
-    name=args.dataset_name,
-    transform=T.OneHotDegree(max_degree),
+    name=args.dataset_name
+    # transform=T.OneHotDegree(max_degree),
 )
 
 label = dataset.data.y
@@ -70,29 +72,33 @@ dropout_rate = args.dropout
 batch_size = args.batch_size
 print(args)
 
+
 class MyRelu(torch.nn.Module):
     def __init__(self):
 
         super().__init__()
     def forward(self, x):
         return F.relu(x)
+
 class MyLogSoftmax(torch.nn.Module):
     def __init__(self):
         super().__init__()
     def forward(self, x):
-        return F.log_softmax(x,dim=-1)
+        return F.log_softmax(x, dim=-1)
+
 
 class MyEdgeConvBlock(torch.nn.Module):
     def __init__(self,in_channels,out_channels,edge_filters_num,dropout=dropout_rate):
         super().__init__()
-        self.bn=BatchNorm1d(in_channels)
-        self.ecn=EdgeConv(in_channels, out_channels, edge_filters_num,dropout)
+        self.bn = BatchNorm1d(in_channels)
+        self.ecn = EdgeConv(in_channels, out_channels, edge_filters_num,dropout)
 
-    def forward(self, x,edge_index):
-        x=self.bn(x)
-        x=self.ecn(x,edge_index)
-        x=F.relu(x)
+    def forward(self, x, edge_index):
+        x = self.bn(x)
+        x = self.ecn(x, edge_index)
+        x = F.relu(x)
         return x
+
 
 class Net(torch.nn.Module):
     def __init__(self):
@@ -121,11 +127,11 @@ class Net(torch.nn.Module):
     def forward(self, x, edge_index, batch):
         x = self.fc0(x)
         x = F.dropout(x,dropout_rate)
-        #z = x
+        #    z = x
         xlist=[]
         for i in range(blocks):
-            x = self.blocks0['block' + str(i)](x,edge_index)
-            x = F.dropout(x, dropout_rate)
+            x = self.blocks0['block' + str(i)](x, edge_index)
+            x = F.dropout(x, 0.6)
             xlist.append(x)
         #    x = x + z
         #    z = x
@@ -136,8 +142,8 @@ class Net(torch.nn.Module):
         #    x = F.dropout(x, dropout_rate)
         #    x = x + z
         #    z = x
-        #x, edge_index, batch = self.dp1(x, edge_index, batch)
-        #z=x
+        #    x, edge_index, batch = self.dp1(x, edge_index, batch)
+        #    z=x
 
         x = torch.cat(xlist,-1)
         x = global_mean_pool(x, batch)
@@ -184,18 +190,25 @@ def train(model, optimizer, epoch):
     return loss_all / len(train_dataset)
 
 
-def test(model, loader):
+def test(model, loader, flag=False):
     model.eval()
-
     loss_all = 0
     correct = 0
+    i = 0
     for data in loader:
         data = data.to(device)
         output = model(data.x, data.edge_index, data.batch)
         loss = F.nll_loss(output, data.y)
         loss_all += loss.item() * data.num_graphs
         pred = output.max(dim=1)[1]
+        if flag:
+            if pred.ne(data.y).sum().item() != 0:
+                plt.figure()
+                error = to_networkx(data.edge_index, data.x)
+                nx.draw_networkx(error)
+                plt.savefig('graphs/' + args.dataset_name+ '/error_{}'.format(i))
         correct += pred.eq(data.y).sum().item()
+        i += 1
     return correct / len(loader.dataset), loss_all / len(test_dataset)
 
 
@@ -218,6 +231,9 @@ if __name__ == '__main__':
     skf = StratifiedKFold(n_splits=10, random_state=args.seed)
     i = 0
     for train_index, test_index in skf.split(range(len(label)), label):
+        # if(i>=1):
+        #     break
+
         # make_cv(path, i, train_index, test_index)
         # cv_5 cv_6 cv_7 cv_8 性能差
         if i==0:
@@ -233,7 +249,7 @@ if __name__ == '__main__':
         cv_train_losses, cv_test_losses, cv_train_accs, cv_test_accs = ([] for i in range(4))
         test_dataset = load_data(dataset, test_index)
         train_dataset = load_data(dataset, train_index)
-        test_loader = DataLoader(test_dataset, batch_size=batch_size)
+        test_loader = DataLoader(test_dataset, batch_size=1)
         train_loader = DataLoader(train_dataset, batch_size=batch_size)
         for epoch in range(1, args.epochs):
             start = time.time()
@@ -241,6 +257,7 @@ if __name__ == '__main__':
             train_acc, _ = test(model, train_loader)
             # train_loss, train_acc = train(model, optimizer, epoch, train_dataset)
             test_acc, test_loss = test(model, test_loader)
+            plt.show()
             end = time.time()
             line = ('Epoch: {:03d}, Train Loss: {:.7f}, Test Loss: {:.7f}, '
             'Train Acc: {:.7f}, Test Acc: {:.7f}, Time: {:.2f}'.format(epoch, train_loss, test_loss,
@@ -254,9 +271,9 @@ if __name__ == '__main__':
             cv_test_accs.append(test_acc)
 
 
-        graph_path = args.dataset_name + '/cv_fig'
-        if i == 1:
-            plot_loss_and_acc(epoch, cv_train_losses, cv_test_losses, cv_train_accs, cv_test_accs, graph_path)
+        # graph_path = args.dataset_name + '/cv_fig'
+        # if i == 1:
+        #     plot_loss_and_acc(epoch, cv_train_losses, cv_test_losses, cv_train_accs, cv_test_accs, graph_path)
 
         # plot_loss_and_acc(epoch, cv_train_losses, cv_test_losses, cv_train_accs, cv_test_accs, fpath='../Graphs/cv_fig')
         train_losses.append(cv_train_losses)
@@ -274,3 +291,14 @@ if __name__ == '__main__':
     # write_result()
     graph_path = args.dataset_name + '/' + args.dataset_name + '_acc_{:.5f}.png'.format(test_accs[-1])
     plot_loss_and_acc(epoch, train_losses, test_losses, train_accs, test_accs, graph_path)
+    # test_acc, test_loss = test(model, test_loader, True)
+    # visual_loader = load_data(dataset, test_index)
+    # i = 0
+    # for data in visual_loader:
+    #     data = data.to(device)
+    #
+    #     plt.figure()
+    #     error = to_networkx(data.edge_index, data.x)
+    #     nx.draw_networkx(error)
+    #     plt.savefig('graphs/test/test_{}'.format(i))
+    #     i += 1

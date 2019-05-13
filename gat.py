@@ -9,14 +9,18 @@ from torch.nn.modules import Module
 import torch.nn.functional as F
 from torch.nn import Linear
 from torch_geometric.datasets import TUDataset
+import torch_geometric.transforms as T
 from torch_geometric.data import DataLoader
-from torch_geometric.nn import global_add_pool
+from torch_geometric.nn import global_add_pool, GATConv
 from torch_geometric.utils import add_self_loops
 from torch_scatter import scatter_add
-from attention_conv import GATConv
 
-path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'NCI1')
-dataset = TUDataset(path, name='NCI1').shuffle()
+max_degree = 10000
+path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'MUTAG')
+dataset = TUDataset(path,
+                    name='MUTAG',
+                    # transform=T.OneHotDegree(max_degree)
+                    ).shuffle()
 data_index = range(len(dataset))
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 n_components = dataset.num_classes
@@ -62,19 +66,19 @@ class Net(torch.nn.Module):
         super(Net, self).__init__()
         self.hook = HookDegree(8)
         self.hook.register_forward_hook(append_degree)
-        self.conv1 = GATConv(dataset.num_features, 1, heads=32, dropout=0.6, concat=True)
-        self.bn1 = BatchNorm1d(32 * 1)
-        self.conv2 = GATConv(32 * 1, 1, heads=32, dropout=0.6, concat=True)
-        self.bn2 = BatchNorm1d(32 * 1)
-        self.conv3 = GATConv(32 * 1, 1, heads=32, dropout=0.6, concat=True)
-        self.bn3 = BatchNorm1d(32 * 1)
-        self.conv4 = GATConv(1 * 32, 1, heads=32, dropout=0.6)
-        self.bn4 = BatchNorm1d(32 * 1)
+        self.conv1 = GATConv(dataset.num_features, 8, heads=8, dropout=0.2, concat=True)
+        self.bn1 = BatchNorm1d(8 * 8)
+        self.conv2 = GATConv(8 * 8, 8, heads=8, dropout=0.2, concat=True)
+        self.bn2 = BatchNorm1d(8 * 8)
+        self.conv3 = GATConv(8 * 8, 8, heads=8, dropout=0.2, concat=True)
+        self.bn3 = BatchNorm1d(8 * 8)
+        self.conv4 = GATConv(8 * 8, 8, heads=8, dropout=0.2)
+        self.bn4 = BatchNorm1d(8 * 8)
 
-        self.fc1 = Linear(32, 16)
+        self.fc1 = Linear(64, 32)
         self.fc1.register_forward_hook(append_graph_features)
-        self.fc2 = Linear(16, dataset.num_classes)
-        self.fc3 = Linear(32, dataset.num_features)
+        self.fc2 = Linear(32, dataset.num_classes)
+        self.fc3 = Linear(64, dataset.num_features)
         self.fc3.register_forward_hook(append_node_features)
 
     def forward(self, x, edge_index, batch):
@@ -88,13 +92,13 @@ class Net(torch.nn.Module):
         x = F.elu(self.conv3(x, edge_index))
         x = self.bn3(x)
         x = F.dropout(x, p=0.6, training=self.training)
-        self.hook(edge_index, x)
+        # self.hook(edge_index, x)
         x = F.elu(self.conv4(x, edge_index))
         x = self.bn4(x)
         # self.fc3(x)
         x = global_add_pool(x, batch)
         x = F.relu(self.fc1(x))
-        x = F.dropout(x, p=0.5, training=self.training)
+        x = F.dropout(x, p=0.2, training=self.training)
         x = self.fc2(x)
         return F.log_softmax(x, dim=-1)
 
@@ -155,7 +159,7 @@ if __name__ == '__main__':
         train_dataset = load_data(dataset, train_index)
         test_loader = DataLoader(test_dataset, batch_size=512)
         train_loader = DataLoader(train_dataset, batch_size=512)
-        for epoch in range(1, 801):
+        for epoch in range(1, 501):
             train_loss = train(model, optimizer, epoch)
             train_acc, _ = test(model, train_loader)
             test_acc, test_loss = test(model, test_loader)

@@ -112,11 +112,11 @@ class Net(torch.nn.Module):
 
         x = self.bn5(x)
         x = F.dropout(x, p=0.2, training=self.training)
-        # self.hook(edge_index, x)
+        self.hook(edge_index, x)
         z=x
         x = F.elu(self.conv5(x, edge_index))
         x=z+x
-        # self.fc3(x)
+        self.fc3(x)
         x = global_add_pool(x, batch)
 
 

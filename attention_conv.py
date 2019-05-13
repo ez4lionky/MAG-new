@@ -96,9 +96,9 @@ class GATConv(MessagePassing):
         # Compute attention coefficients.
         alpha = (torch.cat([x_i, x_j], dim=-1) * self.att).sum(dim=-1)
         alpha = F.relu(alpha)
-        # alpha = torch.exp(-F.leaky_relu(alpha, self.negative_slope))
-        # alpha = alpha / scatter_add(alpha, edge_index[0], dim=0, dim_size=num_nodes)[edge_index[0]]
-        # self.hook(alpha, edge_index[0])
+        alpha = torch.exp(-F.leaky_relu(alpha, self.negative_slope))
+        alpha = alpha / scatter_add(alpha, edge_index[0], dim=0, dim_size=num_nodes)[edge_index[0]]
+        self.hook(alpha, edge_index[0])
 
         # Sample attention coefficients stochastically.
         if self.training and self.dropout > 0:

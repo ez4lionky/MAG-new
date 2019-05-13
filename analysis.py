@@ -62,7 +62,7 @@ print('Model training...')
 # plt.ion()
 # xs, ys_train_loss, ys_test_loss, ys_train_acc, ys_test_acc = ([0, 0] for _ in range(5))
 # ax1, ax2 = plt.subplot(211), plt.subplot(212)
-for epoch in range(0, 800):
+for epoch in range(0, 100):
     if (epoch + 1) % 50==0:
         print('50 epochs done!')
     train_loss = train(model, optimizer, epoch)     # hook append n (train_batches) times
@@ -88,31 +88,33 @@ print('Last epoch, Train Loss: {:.7f}, Test Loss: {:.7f}, '
           'Train Acc: {:.7f}, Test Acc: {:.7f}'.format(train_loss, test_loss,
                                                        train_acc, test_acc))
 
-# node_features = np.array(node_features, dtype='float32')
-# graph_features = np.array(graph_features, dtype='float32')
-# x = np.array(input['x'][-1].cpu(), dtype='float32')
-# y = np.array(input['y'][-1].cpu())
-# tsne_in = np.concatenate([node_features, x])
-#
-# ax1 = plt.subplot(1, 2, 1)
-# tsne = TSNE(n_components=n_components, init='random', random_state=0, perplexity=5)
-# embed = tsne.fit_transform(tsne_in)
-# mid = int(len(embed)/2)
-#
-# ax1.scatter(embed[:mid, 0], embed[:mid, 1], c='r', label='Extracted features')
-# ax1.scatter(embed[mid:, 0], embed[mid:, 1], c='b', label='Original features')
-# ax1.legend(loc="upper left")
-#
-# ax2 = plt.subplot(1, 2, 2)
-# tsne = TSNE(n_components=2, init='random', random_state=0, perplexity=5)
-# embed = tsne.fit_transform(graph_features)
-# ax2.scatter(embed[y==0, 0], embed[y==0, 1], c='r', label='Class 0')
-# ax2.scatter(embed[y==1, 0], embed[y==1, 1], c='b', label='Class 1')
-# ax2.legend(loc="upper left")
-# plt.savefig('../Graph/tsne')
+node_features = np.array(node_features, dtype='float32')
+graph_features = np.array(graph_features, dtype='float32')
+x = np.array(input['x'][-1].cpu(), dtype='float32')
+y = np.array(input['y'][-1].cpu())
+tsne_in = np.concatenate([node_features, x])
 
-# plt.figure(figsize=(10, 10))
+ax1 = plt.subplot(1, 2, 1)
+tsne = TSNE(n_components=n_components, init='random', random_state=0, perplexity=5)
+embed = tsne.fit_transform(tsne_in)
+mid = int(len(embed)/2)
+
+ax1.scatter(embed[:mid, 0], embed[:mid, 1], c='r', label='Extracted features')
+ax1.scatter(embed[mid:, 0], embed[mid:, 1], c='b', label='Original features')
+ax1.legend(loc="upper left")
+
+ax2 = plt.subplot(1, 2, 2)
+tsne = TSNE(n_components=2, init='random', random_state=0, perplexity=5)
+embed = tsne.fit_transform(graph_features)
+ax2.scatter(embed[y==0, 0], embed[y==0, 1], c='r', label='Class 0')
+ax2.scatter(embed[y==1, 0], embed[y==1, 1], c='b', label='Class 1')
+ax2.legend(loc="upper left")
+plt.savefig('../Graph/tsne')
+
+plt.figure(figsize=(10, 10))
+
 alpha_entropy = np.array(alpha_entropy[-1])   # 得到的是加上自环后的attention weight, alpha_weight[-1]为最后一个epoch的最后一层GAT的结果 num = e + n
+print(alpha_entropy.shape)
 degree = np.array(degree[-1])
 print('np.min(alpha_entropy', np.min(alpha_entropy))
 print('np.max(alpha_entropy)', np.max(alpha_entropy))
