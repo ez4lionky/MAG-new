@@ -3,7 +3,7 @@ from torch.nn import Parameter
 import torch.nn.functional as F
 from torch.nn.modules import Module
 from torch_geometric.nn.conv import MessagePassing
-from torch_geometric.utils import add_self_loops, softmax
+from torch_geometric.utils import add_self_loops
 from torch_scatter import scatter_add, scatter_mul
 from torch.nn import Sequential, ReLU, Linear
 import math
@@ -35,15 +35,12 @@ class EdgeConv(MessagePassing):
         self.subgraph_filters_num=out_channels # subgraph_filters_num
         self.in_channels=in_channels
         self.dropout=dropout
-
         ##############################################
-
         self.subgraph_edges_filters_weights = torch.nn.Parameter(
             torch.Tensor(self.in_channels * 2, self.edge_filters_dim * self.subgraph_filters_num)
         )
         ##(node_nums*2,edge_filters_dim*subgraph_filters_num)
         #print(self.subgraph_edges_filters_weights.size())
-
         self.subgraph_filters_bias = torch.nn.Parameter(
             torch.Tensor(1, self.edge_filters_dim * self.subgraph_filters_num)
         ) ##(1,edge_filters_dim*subgraph_filters_num)
@@ -65,11 +62,9 @@ class EdgeConv(MessagePassing):
         self.affine_bias1=torch.nn.Parameter(
             torch.Tensor(self.subgraph_filters_num, 1, 1)
         )
-
         self.bn=BatchNorm1d(self.subgraph_filters_num*self.edge_filters_dim)
         self.att1 = Parameter(torch.Tensor(edge_filters_dim * out_channels, edge_filters_dim))
         self.att2 = Parameter(torch.Tensor(edge_filters_dim, 1))
-        #print(self.affine_weights.size())
         ###############################################
         self.reset_parameters()
 
@@ -77,36 +72,34 @@ class EdgeConv(MessagePassing):
         glorot(self.subgraph_edges_filters_weights)
         glorot(self.affine_weights0)
         glorot(self.affine_weights1)
-        glorot(self.att1)
-        glorot(self.att2)
         zeros(self.affine_bias1)
         zeros(self.affine_bias0)
+        glorot(self.att1)
+        glorot(self.att2)
         zeros(self.subgraph_filters_bias)
 
     def forward(self, x, edge_index):
         # x has shape [nodes_num, in_channels]
-        edge_index = add_self_loops(edge_index, num_nodes=x.size(0))
         # edge_index has shape [2, edges_num]
         # Step 3-5: Start propagating messages.
-        return self.propagate('add', edge_index, x=x, nodes_num=x.size(0))
+        return self.propagate('add',edge_index, x=x, nodes_num=x.size(0))
 
-    def message(self, x_i, x_j, edge_index, nodes_num):
+    def message(self, x_i,x_j, edge_index, nodes_num):
         # x_j has shape [edges_num, out_channels]
 
         # Step 3: Normalize node features.
         # row, col = edge_index
-        e_ij =  torch.cat((x_i, x_j), dim=-1)  # [edge_num, in_channels * 2]
+        e_ij =  torch.cat((x_i, x_j), dim=-1)  # [nodes_num, in_channels * 2]
         out = F.relu(torch.mm(e_ij, self.subgraph_edges_filters_weights) + self.subgraph_filters_bias)
+        # (edges_num, subgraph_filters_num * edge_filters_dim)
 
         alpha = torch.matmul(out, self.att1)
         alpha = F.relu(alpha)
         alpha = torch.matmul(alpha, self.att2)
         alpha = torch.sigmoid(alpha)
         out = out * alpha
-        # (edges_num, subgraph_filters_num * edge_filters_dim)
-
-        # if self.training and self.dropout > 0:
-        #    out = F.dropout(out, p=self.dropout, training=self.training)
+        if self.training and self.dropout > 0:
+           out = F.dropout(out, p=self.dropout, training=self.training)
 
         return out
 
@@ -114,14 +107,14 @@ class EdgeConv(MessagePassing):
         # aggr_out has shape [nodes_num, out_channels]
         aggr_out = self.bn(aggr_out)
         aggr_out = aggr_out.view(-1, self.subgraph_filters_num, 1, self.edge_filters_dim)
-        # [nodes_num,subgraph_filters_num, 1, edge_filters_dim]
-        # aggr_out= F.relu(torch.matmul(aggr_out, self.affine_weights0)+self.affine_bias0)
+        # # [nodes_num,subgraph_filters_num,1,edge_filters_dim]
+        # # aggr_out= F.relu(torch.matmul(aggr_out, self.affine_weights0)+self.affine_bias0)
         if self.training and self.dropout > 0:
             aggr_out = F.dropout(aggr_out, p=self.dropout, training=self.training)
-        # [nodes_num,subgraph_filters_num,1,edge_filters_dim]
+        # # [nodes_num,subgraph_filters_num,1,edge_filters_dim]
         aggr_out = F.relu(torch.matmul(aggr_out, self.affine_weights0) + self.affine_bias0)
-        aggr_out = torch.matmul(aggr_out, self.affine_weights1) + self.affine_bias1
-        # [nodes_num,subgraph_filters_num,1,1]
+        aggr_out = F.relu(torch.matmul(aggr_out, self.affine_weights1) + self.affine_bias1)
+        # # [nodes_num,subgraph_filters_num,1,1]
         aggr_out.squeeze_()  # (nodes_num,subgraph_filters_num)
         return aggr_out
 

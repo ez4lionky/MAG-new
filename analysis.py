@@ -24,7 +24,7 @@ input = {'x': [], 'y': []}
 def train(model, optimizer, epoch):
     model.train()
 
-    if epoch == 51 and epoch<400:
+    if epoch == 51 and epoch < 400:
         for param_group in optimizer.param_groups:
             param_group['lr'] = 0.5 * param_group['lr']
 

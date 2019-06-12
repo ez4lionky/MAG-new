@@ -2,6 +2,7 @@ import time
 import numpy as np
 import os.path as osp
 from sklearn.model_selection import StratifiedKFold
+from util import plot_loss_and_acc
 
 import torch
 import torch.nn.functional as F
@@ -12,11 +13,11 @@ from torch_geometric.data import DataLoader
 from torch_geometric.nn import EdgeConv
 from torch_geometric.nn import global_mean_pool
 
-max_degree = 10000
-path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'IMDB-BINARY')
+max_degree = 1000
+path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'PTC_MR')
 dataset = TUDataset(
     path,
-    name='IMDB-BINARY',
+    name='PTC_MR',
     transform=T.OneHotDegree(max_degree)
 )
 label = dataset.data.y
@@ -36,35 +37,35 @@ class Net(torch.nn.Module):
         super(Net, self).__init__()
 
         self.eg1 = EdgeConv(
-            Seq(Lin(dataset.num_features * 2, 64), ReLU(), Lin(64, 32), ReLU()), 'add')
+            Seq(Lin(dataset.num_features * 2, 32), ReLU(), Lin(32, 16), ReLU()), 'max')
 
         self.eg2 = EdgeConv(
-            Seq(Lin(64, 64), ReLU(), Lin(64, 32), ReLU()), 'add')
+            Seq(Lin(32, 32), ReLU(), Lin(32, 16), ReLU()), 'max')
 
         self.eg3 = EdgeConv(
-            Seq(Lin(64, 64), ReLU(), Lin(64, 32), ReLU()), 'add')
+            Seq(Lin(32, 32), ReLU(), Lin(32, 32), ReLU()), 'max')
 
-        self.eg4 = EdgeConv(
-            Seq(Lin(64, 64), ReLU(), Lin(64, 32), ReLU()), 'add')
+        # self.eg4 = EdgeConv(
+        #     Seq(Lin(32, 32), ReLU(), Lin(32, 16), ReLU()), 'max')
+        #
+        # self.eg5 = EdgeConv(Seq(Lin(32, 32), ReLU(), Lin(32, 32), ReLU()), 'max')
 
-        self.eg5 = EdgeConv(Seq(Lin(64, 64), ReLU(), Lin(64, 64), ReLU()), 'add')
-
-        self.lin1 = Lin(64, 32)
-        self.lin2 = Lin(32, dataset.num_classes)
+        self.lin1 = Lin(32, 16)
+        self.lin2 = Lin(16, dataset.num_classes)
 
     def forward(self, x, edge_index, batch):
         x = self.eg1(x, edge_index)
         x = self.eg2(x, edge_index)
         x = self.eg3(x, edge_index)
-        x = self.eg4(x, edge_index)
-        x = self.eg5(x, edge_index)
+        # x = self.eg4(x, edge_index)
+        # x = self.eg5(x, edge_index)
 
         x = global_mean_pool(x, batch)
 
         x = F.relu(self.lin1(x))
-        x = F.dropout(x, p=0.5, training=self.training)
+        x = F.dropout(x, p=0.2, training=self.training)
         x = F.relu(self.lin2(x))
-        x = F.dropout(x, p=0.5, training=self.training)
+        x = F.dropout(x, p=0.2, training=self.training)
 
         return F.log_softmax(x, dim=-1)
 
@@ -109,13 +110,15 @@ train_losses, test_losses, train_accs, test_accs = [], [], [], []
 skf = StratifiedKFold(n_splits=10, random_state=100)
 i = 0
 for train_index, test_index in skf.split(range(len(label)), label):
+    print("CV: ", i)
+    i += 1
     model = Net().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=1e-4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
     cv_train_losses, cv_test_losses, cv_train_accs, cv_test_accs = ([] for i in range(4))
     test_dataset = load_data(dataset, test_index)
     train_dataset = load_data(dataset, train_index)
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=50, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=50, shuffle=True)
     for epoch in range(1, 201):
         start = time.time()
         train_loss = train(model, optimizer, epoch)
@@ -139,8 +142,10 @@ for train_index, test_index in skf.split(range(len(label)), label):
     train_accs.append(cv_train_accs)
     test_accs.append(cv_test_accs)
 
-train_losses = np.mean(train_losses, axis=0)
-test_losses = np.mean(test_losses, axis=0)
-train_accs = np.mean(train_accs, axis=0)
-test_accs = np.mean(test_accs, axis=0)
-print('Mean accuracy', test_accs[-1])
+mean_train_loss = np.mean(train_losses, axis=0)
+mean_test_loss = np.mean(test_losses, axis=0)
+mean_train_acc = np.mean(train_accs, axis=0)
+mean_test_acc = np.mean(test_accs, axis=0)
+std_test_acc = np.std(test_accs, axis=0)[-1]
+print("Std: ", std_test_acc, " test_acc", mean_test_acc[-1])
+plot_loss_and_acc(epoch, mean_train_loss, mean_test_loss, mean_train_acc, mean_test_acc)
