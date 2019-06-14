@@ -33,14 +33,12 @@ parser.add_argument('--seed', type=int, default=100,
                     help='random seed for splitting the dataset into 10 (default: 0)')
 parser.add_argument('--num_blocks', type=int, default=3,
                     help='number of layers INCLUDING the input one (default: 3)')
-parser.add_argument('--message_out_dim', type=str, default='128-128-128',
-                    help='dimension of output pushed message (default: \'128-128-128\')')
-parser.add_argument('--message_in_dim', type=str, default='128-128-128',
-                    help='dimension of input pushed message (default: \'128-128-128\')')
-parser.add_argument('--affine_dim', type=str, default='64-64-64',
-                    help='hidden units number of affine network (default: \'64-64-64\')')
-parser.add_argument('--attention_dim', type=str, default='16-16-16',
-                    help='hidden units number of affine network (default: \'16-16-16\')')
+parser.add_argument('--edge_filters_dim', type=int, default=8,
+                    help='dimension of edge filter (default: 8)')
+parser.add_argument('--block_in_dim', type=str, default='16-16-16',
+                    help='the transformed input dimension and number of pre-layer\'s subgraph edge filter (default: \'8-32-32\')')
+parser.add_argument('--block_out_dim', type=str, default='16-16-16',
+                    help='number of current layer\'s subgraph edge filter (default: \'32-32-32\')')
 parser.add_argument('--mlp_dim', type=int, default=32,
                     help='number of hidden units (default: 64)')
 parser.add_argument('--weight_decay', type=float, default=1e-4,
@@ -50,7 +48,7 @@ parser.add_argument('--dropout', type=float, default=0.2,
 args = parser.parse_args()
 
 
-max_degree = 1000
+max_degree = 10000
 
 path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', args.dataset_name)
 result_path = osp.join(osp.dirname(osp.realpath(__file__)),  '..', 'Results', args.dataset_name, 'tmp.txt')
@@ -67,8 +65,7 @@ n_components = dataset.num_classes
 blocks = args.num_blocks
 block_in_channels = [int(_) for _ in args.block_in_dim.split('-')]
 block_out_channels = [int(_) for _ in args.block_out_dim.split('-')]
-affine_dims = [int(_) for _ in args.affine_dim.split('-')]
-attention_dims = [int(_) for _ in args.attention_dim.split('-')]
+edge_filters_num_list = [args.edge_filters_dim for _ in range(blocks)]
 learning_rate = args.lr
 dropout_rate = args.dropout
 batch_size = args.batch_size
@@ -79,26 +76,27 @@ y = []
 
 def append_graph_features(module, input, output):
     del graph_features[:-1]
+    print(input.shape)
     graph_features.append(input.tolist())
 
 
 class MyRelu(torch.nn.Module):
     def __init__(self):
+
         super().__init__()
     def forward(self, x):
         return F.relu(x)
 class MyLogSoftmax(torch.nn.Module):
     def __init__(self):
         super().__init__()
-
     def forward(self, x):
         return F.log_softmax(x,dim=-1)
 
 class MyEdgeConvBlock(torch.nn.Module):
-    def __init__(self, in_channels, out_channels, affine_dims, attention_dims, dropout=dropout_rate):
+    def __init__(self,in_channels,out_channels,edge_filters_num,dropout=dropout_rate):
         super().__init__()
         self.bn=BatchNorm1d(in_channels)
-        self.ecn=EdgeConv(in_channels, out_channels, affine_dims, attention_dims, dropout)
+        self.ecn=EdgeConv(in_channels, out_channels, edge_filters_num,dropout)
 
     def forward(self, x,edge_index):
         x=self.bn(x)
@@ -115,6 +113,13 @@ class Net(torch.nn.Module):
         self.blocks0 = torch.nn.ModuleDict()
         for i in range(blocks):
             self.blocks0['block' + str(i)] = MyEdgeConvBlock(block_in_channels[i],block_out_channels[i],edge_filters_num_list[i],dropout_rate)
+        # self.dp0=DiffPoolSparse(batch_size, 100, 10)
+
+        # self.blocks1 = torch.nn.ModuleDict()
+        # for i in range(blocks):
+        #    self.blocks1['block' + str(i)] = MyEdgeConvBlock(block_in_channels, block_out_channels,
+        #                                                    edge_filters_num_list[i], 0)
+        # self.dp1 = DiffPoolSparse(batch_size, 10, 5)
 
         self.fc = torch.nn.Sequential(
             Linear(sum(block_out_channels), args.mlp_dim),
@@ -129,9 +134,27 @@ class Net(torch.nn.Module):
         x = F.dropout(x,dropout_rate)
         #z = x
         xlist=[]
+        # glist = []
+        # for i in range(blocks):
+        #     x = self.blocks0['block' + str(i)](x, edge_index)
+        #     x = F.dropout(x, dropout_rate)
+        #     xlist.append(x)
+        #     g = global_mean_pool(x, batch)
+        #     x_lg = torch.Tensor(x.size(0), x.size(1) + g.size(1)).to(device)
+        #     # glist.append(g)
+        #     count = 0
+        #     for i in range(g.size(0)):
+        #         length = len(batch[batch == i])  # count-length
+        #         tmp = g[i].repeat(length).view(length, -1)
+        #         index1 = torch.arange(0, x.size(1)).repeat(length).view(length, -1).to(device)
+        #         index2 = torch.arange(x.size(1), 2 * x.size(1)).repeat(length).view(length, -1).to(device)
+        #         x_lg[count:count + length][:].scatter_(1, index1, x[count:count+length][:])
+        #         x_lg[count:count + length][:].scatter_(1, index2, tmp)
+        #         count += length
+        #     x = x_lg
 
         for i in range(blocks):
-            x = self.blocks0['block' + str(i)](x, edge_index)
+            x = self.blocks0['block' + str(i)](x,edge_index)
             x = F.dropout(x, dropout_rate)
             xlist.append(x)
 
@@ -143,6 +166,7 @@ class Net(torch.nn.Module):
 
 
 def train(model, optimizer, epoch):
+# def train(model, optimizer, epoch, train_dataset):
     model.train()
 
     if epoch % 50 == 0:
@@ -150,6 +174,23 @@ def train(model, optimizer, epoch):
            param_group['lr'] = 0.5 * param_group['lr']
 
     loss_all = 0
+
+    # for _ in range(20):
+    #     selected_idx = np.random.permutation(len(train_dataset))[:batch_size]
+    #     data = [train_dataset[idx] for idx in selected_idx]
+    #     tmp_train_loader = DataLoader(data, batch_size)
+    #     for data in tmp_train_loader:
+    #         data = data.to(device)
+    #         optimizer.zero_grad()
+    #         output = model(data.x, data.edge_index, data.batch)
+    #         loss = F.nll_loss(output, data.y)
+    #         loss.backward()
+    #         loss_all += loss.item() * data.num_graphs
+    #         optimizer.step()
+    #     del tmp_train_loader
+    #
+    # train_acc, _ = test(model, train_loader)
+    # return loss_all / (20 * batch_size), train_acc
 
     for data in train_loader:
         data = data.to(device)
@@ -218,6 +259,7 @@ if __name__ == '__main__':
             start = time.time()
             train_loss = train(model, optimizer, epoch)
             train_acc, _ = test(model, train_loader)
+            # train_loss, train_acc = train(model, optimizer, epoch, train_dataset)
             test_acc, test_loss = test(model, test_loader)
             end = time.time()
             line = ('Epoch: {:03d}, Train Loss: {:.7f}, Test Loss: {:.7f}, '
@@ -251,3 +293,11 @@ if __name__ == '__main__':
     # write_result()
     graph_path = args.dataset_name + '/' + args.dataset_name + '_acc_{:.5f}.png'.format(test_accs[-1])
     plot_loss_and_acc(epoch, train_losses, test_losses, train_accs, test_accs, graph_path)
+
+    # print(graph_features)
+    # graph_features = np.array(graph_features, dtype='float32')
+    # tsne = TSNE(n_components=2, init='random', random_state=0, perplexity=5)
+    # embed = tsne.fit_transform(graph_features)
+    # plt.scatter(embed[y == 0, 0], embed[y==0, 1], c='r', label='Pos')
+    # plt.scatter(embed[y == 1, 0], embed[y == 1, 1], c='b', label='Neg')
+    # plt.savefig('../Graph/tsne')

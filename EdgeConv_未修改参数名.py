@@ -26,10 +26,9 @@ def zeros(tensor):
 class EdgeConv(MessagePassing):
 
     def __init__(self,
-                 message_in_dim,
-                 message_out_dim,
-                 affine_dim,
-                 attention_dim,
+                 in_channels,  # 16
+                 out_channels, # 16
+                 heads_num=16, # 8
                  dropout=0):
         super(EdgeConv, self).__init__(aggr='add')
         self.heads_num = heads_num

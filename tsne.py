@@ -72,8 +72,8 @@ n = len(dataset) // batch_size
 hook = 2
 
 def append_graph_features(module, input, output):
-    graph_features.append(input[0].tolist())
-    # graph_features.append(output.tolist())
+    # graph_features.append(input[0].tolist())
+    graph_features.append(output.tolist())
 
 class MyRelu(torch.nn.Module):
     def __init__(self):
@@ -116,7 +116,7 @@ class Net(torch.nn.Module):
         self.fc1 = Linear(sum(block_out_channels), args.mlp_dim)
         # self.fc1 = Linear(block_out_channels[-1], args.mlp_dim)
         self.fc2 = Linear(args.mlp_dim, dataset.num_classes)
-        # self.fc2.register_forward_hook(append_graph_features)
+        self.fc2.register_forward_hook(append_graph_features)
 
     def forward(self, x, edge_index, batch):
         x = self.fc0(x)
@@ -227,8 +227,8 @@ if __name__ == '__main__':
     # ax.scatter(embed[label == 0, 0], embed[label == 0, 1], embed[label == 0, 2], c=plt.cm.Set2(label[label == 0]), label="Category 1")
     # ax.scatter(embed[label == 1, 0], embed[label == 1, 1], embed[label == 1, 2], c=plt.cm.Set2(label[label == 1]), label="Category 2")
 
-    ax.scatter(embed[label == 0, 0], embed[label == 0, 1], embed[label == 0, 2], c=plt.cm.Set2(label[label == 0] / 10), label="Category 1")
-    ax.scatter(embed[label == 2, 0], embed[label == 2, 1], embed[label == 2, 2], c=plt.cm.Set2(label[label == 2] / 10), label="Category 2")
+    ax.scatter(embed[label == 0, 0], embed[label == 0, 1], embed[label == 0, 2], c=plt.cm.Set1((label[label == 0] + 1) / 10), label="Category 1")
+    ax.scatter(embed[label == 2, 0], embed[label == 2, 1], embed[label == 2, 2], c=plt.cm.Set1((label[label == 2]) / 10), label="Category 2")
 
     plt.legend()
     # plt.savefig("PPGCN-"+ args.dataset_name + "-layer" + str(hook))
